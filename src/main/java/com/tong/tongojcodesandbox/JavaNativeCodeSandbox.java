@@ -11,16 +11,23 @@ import java.util.UUID;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.dfa.FoundWord;
+import cn.hutool.dfa.WordTree;
 import com.tong.tongojcodesandbox.model.ExecuteCodeRequest;
 import com.tong.tongojcodesandbox.model.ExecuteCodeResponse;
 import com.tong.tongojcodesandbox.model.ExecuteMessage;
 import com.tong.tongojcodesandbox.model.JudgeInfo;
+import com.tong.tongojcodesandbox.security.DefaultSecurityManager;
 import com.tong.tongojcodesandbox.utils.ProcessUtils;
 
 public class JavaNativeCodeSandbox implements CodeSandbox {
 
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
     private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
+    private static final long TIME_OUT = 5000L;
+    private static final List<String> BLACK_LIST = Arrays.asList("Files", "exec");
+    private static final String SECURITY_MANAGER_PATH = "src/main/resources/security";
+    private static final String SECURITY_MANAGER_CLASS_NAME = "DefaultSecurityManager";
 
     public static void main(String[] args) {
         JavaNativeCodeSandbox javaNativeCodeSandbox = new JavaNativeCodeSandbox();
@@ -36,9 +43,20 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
+        // 开启权限管理器
+        // System.setSecurityManager(new DefaultSecurityManager());
+
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
+        // 校验代码黑白名单
+        // WordTree wordTree = new WordTree();
+        // wordTree.addWords(BLACK_LIST);
+        // FoundWord foundWord = wordTree.matchWord(code);
+        // if(foundWord != null){
+        //     System.out.println("包含禁止词：" + foundWord.getFoundWord());
+        //     return null;
+        // }
         // 1.保存代码文件
         String userDir = System.getProperty("user.dir");
         // 为了兼容不同的操作系统，使用File.separator
@@ -64,8 +82,23 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
         ArrayList<ExecuteMessage> messageArrayList = new ArrayList<>();
         for (String inputArgs : inputList) {
             String runCmd = String.format("java -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
+            // String runCmd = String.format(
+            //         "java -Dfile.encoding=UTF-8 -cp %s;%s -Djava.security.manager=%s Main %s",
+            //         userCodeParentPath, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, inputArgs);
             try {
                 Process runProcess = Runtime.getRuntime().exec(runCmd);
+                // 创建一个守护线程，达到超时时间后中断运行程序的线程runProcess
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(TIME_OUT);
+                        if(runProcess.isAlive()){
+                            System.out.println("超时了，中断");
+                            runProcess.destroy();
+                        }
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                }).start();
                 ExecuteMessage runExecuteMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
                 // ExecuteMessage runExecuteMessage = ProcessUtils.runInteractProcessAndGetMessage(runProcess, inputArgs);
                 messageArrayList.add(runExecuteMessage);
