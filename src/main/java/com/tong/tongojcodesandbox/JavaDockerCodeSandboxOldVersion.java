@@ -1,5 +1,6 @@
 package com.tong.tongojcodesandbox;
 
+import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
@@ -13,7 +14,7 @@ import com.tong.tongojcodesandbox.model.ExecuteCodeRequest;
 import com.tong.tongojcodesandbox.model.ExecuteCodeResponse;
 import com.tong.tongojcodesandbox.model.ExecuteMessage;
 import com.tong.tongojcodesandbox.model.JudgeInfo;
-import org.springframework.stereotype.Component;
+import com.tong.tongojcodesandbox.utils.ProcessUtils;
 import org.springframework.util.StopWatch;
 
 import java.io.Closeable;
@@ -23,20 +24,59 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
  * 代码沙箱Docker实现
  */
-@Component
-public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
+public class JavaDockerCodeSandboxOldVersion implements CodeSandbox {
 
+    private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
+    private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
     private static final long TIME_OUT = 5000L;
+    private static final String SECURITY_MANAGER_PATH = "src/main/resources/security";
+    private static final String SECURITY_MANAGER_CLASS_NAME = "DefaultSecurityManager";
     private static final boolean FIRST_INIT = false;
 
+    // public static void main(String[] args) {
+    //     JavaDockerCodeSandboxOldVersion javaNativeCodeSandbox = new JavaDockerCodeSandboxOldVersion();
+    //     ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
+    //     String code = ResourceUtil.readStr("testCode/simpleComputeArgs/Main.java", StandardCharsets.UTF_8);
+    //     // String code = ResourceUtil.readStr("testCode/simpleCompute/Main.java", StandardCharsets.UTF_8);
+    //     executeCodeRequest.setCode(code);
+    //     executeCodeRequest.setLanguage("java");
+    //     executeCodeRequest.setInputList(Arrays.asList("1 2", "3 4"));
+    //     ExecuteCodeResponse executeCodeResponse = javaNativeCodeSandbox.executeCode(executeCodeRequest);
+    //     System.out.println("executeCodeResponse：" + executeCodeResponse);
+    // }
+
     @Override
-    public List<ExecuteMessage> runFile(File userCodeFile, List<String> inputList) {
-        String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
+    public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
+        List<String> inputList = executeCodeRequest.getInputList();
+        String code = executeCodeRequest.getCode();
+        String language = executeCodeRequest.getLanguage();
+        // 1.保存代码文件
+        String userDir = System.getProperty("user.dir");
+        // 为了兼容不同的操作系统，使用File.separator
+        String globalCodePathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME;
+        // 判断全局代码目录是否存在，没有则新建
+        if (!FileUtil.exist(globalCodePathName)) {
+            FileUtil.mkdir(globalCodePathName);
+        }
+        // 把用户的代码隔离存放
+        String userCodeParentPath = globalCodePathName + File.separator + UUID.randomUUID();
+        String userCodePath = userCodeParentPath + File.separator + GLOBAL_JAVA_CLASS_NAME;
+        File userCodeFile = FileUtil.writeString(code, userCodePath, StandardCharsets.UTF_8);
+        // 2.编译代码
+        String compileCmd = "javac -encoding utf-8 " + userCodeFile.getAbsolutePath();
+        try {
+            Process compileProcess = Runtime.getRuntime().exec(compileCmd);
+            ExecuteMessage compileExecuteMessage = ProcessUtils.runProcessAndGetMessage(compileProcess, "编译");
+            System.out.println(compileExecuteMessage);
+        } catch (IOException e) {
+            return getErrorResponse(e);
+        }
         // 3.创建容器，把编译好的文件上传到容器环境内
         // 3.1 创建默认的DockerClient
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
@@ -110,7 +150,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             // 用于判断程序执行是否超时
             final boolean[] timeout = {true};
             // 回调接口获取程序的执行结果，通过StreamType来区分标准输出和错误输出。
-            ExecStartResultCallback execStartResultCallback = new ExecStartResultCallback() {
+            ExecStartResultCallback execStartResultCallback = new ExecStartResultCallback(){
                 @Override
                 public void onNext(Frame frame) {
                     StreamType streamType = frame.getStreamType();
@@ -193,11 +233,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             executeMessage.setMemory(maxMemory[0]);
             messageArrayList.add(executeMessage);
         }
-        return messageArrayList;
-    }
-
-    @Override
-    public ExecuteCodeResponse getOutputResponse(List<ExecuteMessage> messageArrayList) {
+        // 5.收集整理输出结果
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
         ArrayList<String> outputList = new ArrayList<>();
         // 取运行时间的最大值
@@ -221,7 +257,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             }
             // 判断是否是最大运行内存
             Long runMemory = executeMessage.getMemory();
-            if (runMemory != null) {
+            if(runMemory != null){
                 maxRunMemory = Math.max(maxRunMemory, runMemory);
             }
         }
@@ -237,7 +273,23 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         // 获取程序的执行内存
         judgeInfo.setMemory(maxRunMemory);
         executeCodeResponse.setJudgeInfo(judgeInfo);
+
         return executeCodeResponse;
     }
 
+    /**
+     * 获取错误响应
+     *
+     * @param e
+     * @return
+     */
+    private ExecuteCodeResponse getErrorResponse(Throwable e) {
+        ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
+        executeCodeResponse.setOutputList(new ArrayList<>());
+        executeCodeResponse.setMessage(e.getMessage());
+        // 设置状态码2，表示代码沙箱错误
+        executeCodeResponse.setStatus(2);
+        executeCodeResponse.setJudgeInfo(new JudgeInfo());
+        return executeCodeResponse;
+    }
 }
