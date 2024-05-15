@@ -20,6 +20,9 @@ import com.tong.tongojcodesandbox.model.JudgeInfo;
 import com.tong.tongojcodesandbox.security.DefaultSecurityManager;
 import com.tong.tongojcodesandbox.utils.ProcessUtils;
 
+/**
+ * 代码沙箱原生实现
+ */
 public class JavaNativeCodeSandbox implements CodeSandbox {
 
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
