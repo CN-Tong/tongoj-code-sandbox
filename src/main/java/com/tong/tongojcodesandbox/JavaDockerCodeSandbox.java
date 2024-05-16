@@ -1,6 +1,5 @@
 package com.tong.tongojcodesandbox;
 
-import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.StrUtil;
 import com.github.dockerjava.api.DockerClient;
@@ -9,7 +8,7 @@ import com.github.dockerjava.api.command.*;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
-import com.tong.tongojcodesandbox.model.ExecuteCodeRequest;
+import com.tong.tongojcodesandbox.model.ExecuteCodeRespStatusEnum;
 import com.tong.tongojcodesandbox.model.ExecuteCodeResponse;
 import com.tong.tongojcodesandbox.model.ExecuteMessage;
 import com.tong.tongojcodesandbox.model.JudgeInfo;
@@ -19,11 +18,10 @@ import org.springframework.util.StopWatch;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 代码沙箱Docker实现
@@ -31,7 +29,14 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
 
+    /**
+     * 程序执行超时时间(ms)
+     */
     private static final long TIME_OUT = 5000L;
+
+    /**
+     * 是否拉取java镜像
+     */
     private static final boolean FIRST_INIT = false;
 
     @Override
@@ -39,7 +44,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         // 3.创建容器，把编译好的文件上传到容器环境内
         // 3.1 创建默认的DockerClient
-        DockerClient dockerClient = DockerClientBuilder.getInstance().build();
+        DockerClient dockerClient = DockerClientBuilder.getInstance("unix:///var/run/docker.sock").build();
         // 3.2 首次执行拉取镜像
         String image = "openjdk:8-alpine";
         if (FIRST_INIT) {
@@ -141,7 +146,6 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 @Override
                 public void onNext(Statistics statistics) {
                     Long memory = statistics.getMemoryStats().getUsage();
-                    System.out.println("内存占用：" + memory);
                     maxMemory[0] = Math.max(memory, maxMemory[0]);
                 }
 
@@ -173,7 +177,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 stopWatch.start();
                 dockerClient.execStartCmd(execId)
                         .exec(execStartResultCallback)
-                        .awaitCompletion(TIME_OUT, TimeUnit.MICROSECONDS);
+                        .awaitCompletion(TIME_OUT, TimeUnit.MILLISECONDS);
                 // 获取程序执行的结束时间
                 stopWatch.stop();
                 // 获取程序执行时间
@@ -199,7 +203,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     @Override
     public ExecuteCodeResponse getOutputResponse(List<ExecuteMessage> messageArrayList) {
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
-        ArrayList<String> outputList = new ArrayList<>();
+        List<String> outputList = new ArrayList<>();
         // 取运行时间的最大值
         long maxRunTime = 0;
         long maxRunMemory = 0;
@@ -208,8 +212,8 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             // 如果执行存在错误
             if (StrUtil.isNotBlank(errorMessage)) {
                 executeCodeResponse.setMessage(errorMessage);
-                // 设置状态码3，用户提交的代码执行错误
-                executeCodeResponse.setStatus(3);
+                // 设置状态码3，用户提交的代码运行错误
+                executeCodeResponse.setStatus(ExecuteCodeRespStatusEnum.RUN_ERROR.getValue());
                 break;
             }
             // 将结果信息保存
@@ -222,14 +226,19 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             // 判断是否是最大运行内存
             Long runMemory = executeMessage.getMemory();
             if (runMemory != null) {
+                System.out.println("runMemory: " + runMemory);
                 maxRunMemory = Math.max(maxRunMemory, runMemory);
             }
         }
         // 正常运行完成
         if (outputList.size() == messageArrayList.size()) {
             // 设置状态码1
-            executeCodeResponse.setStatus(1);
+            executeCodeResponse.setStatus(ExecuteCodeRespStatusEnum.SUCCESS.getValue());
         }
+        // 去掉输出列表中的换行符
+        outputList = outputList.stream()
+                .map(s -> s.replace("\n", ""))
+                .collect(Collectors.toList());
         executeCodeResponse.setOutputList(outputList);
         JudgeInfo judgeInfo = new JudgeInfo();
         // 获取程序的执行时间（最大值）
@@ -237,6 +246,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
         // 获取程序的执行内存
         judgeInfo.setMemory(maxRunMemory);
         executeCodeResponse.setJudgeInfo(judgeInfo);
+        System.out.println("executeCodeResponse: " + executeCodeResponse);
         return executeCodeResponse;
     }
 

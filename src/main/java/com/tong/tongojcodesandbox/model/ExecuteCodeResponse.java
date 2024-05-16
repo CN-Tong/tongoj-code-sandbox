@@ -32,7 +32,7 @@ public class ExecuteCodeResponse {
     private Integer status;
 
     /**
-     * 编程语言
+     * 判题信息
      */
     private JudgeInfo judgeInfo;
 }

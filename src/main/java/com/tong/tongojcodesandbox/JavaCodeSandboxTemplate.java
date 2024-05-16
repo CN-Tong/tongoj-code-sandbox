@@ -2,10 +2,7 @@ package com.tong.tongojcodesandbox;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
-import com.tong.tongojcodesandbox.model.ExecuteCodeRequest;
-import com.tong.tongojcodesandbox.model.ExecuteCodeResponse;
-import com.tong.tongojcodesandbox.model.ExecuteMessage;
-import com.tong.tongojcodesandbox.model.JudgeInfo;
+import com.tong.tongojcodesandbox.model.*;
 import com.tong.tongojcodesandbox.utils.ProcessUtils;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,7 +30,12 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
 
         // 2.编译代码
         ExecuteMessage compileFileExecuteMessage = compileFile(userCodeFile);
-        System.out.println(compileFileExecuteMessage);
+        System.out.println("compileFileExecuteMessage: " + compileFileExecuteMessage);
+        // 如果编译错误，设置状态码2
+        if(compileFileExecuteMessage.getExitValue() != 0){
+            return new ExecuteCodeResponse(
+                    null, null, ExecuteCodeRespStatusEnum.COMPILE_ERROR.getValue(), new JudgeInfo());
+        }
 
         // 3.执行代码
         List<ExecuteMessage> executeMessageList = runFile(userCodeFile, inputList);
@@ -83,9 +85,6 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
         try {
             Process compileProcess = Runtime.getRuntime().exec(compileCmd);
             ExecuteMessage compileExecuteMessage = ProcessUtils.runProcessAndGetMessage(compileProcess, "编译");
-            if (compileExecuteMessage.getExitValue() != 0) {
-                throw new RuntimeException("编译错误");
-            }
             return compileExecuteMessage;
         } catch (IOException e) {
             // return getErrorResponse(e);
@@ -188,21 +187,5 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             return del;
         }
         return true;
-    }
-
-    /**
-     * 6.获取错误响应
-     *
-     * @param e
-     * @return
-     */
-    private ExecuteCodeResponse getErrorResponse(Throwable e) {
-        ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
-        executeCodeResponse.setOutputList(new ArrayList<>());
-        executeCodeResponse.setMessage(e.getMessage());
-        // 设置状态码2，表示代码沙箱错误
-        executeCodeResponse.setStatus(2);
-        executeCodeResponse.setJudgeInfo(new JudgeInfo());
-        return executeCodeResponse;
     }
 }
