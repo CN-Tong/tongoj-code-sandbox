@@ -18,7 +18,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
 
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
     private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
-    private static final long TIME_OUT = 5000L;
+    private static final long TIME_OUT = 10000L;
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
@@ -60,16 +60,17 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
      * @return
      */
     public File saveCodeToFile(String code) {
-        String userDir = System.getProperty("user.dir");
+        // 获取当前java程序的执行路径
+        String userDir = System.getProperty("user.dir"); // 相当于.
         // 为了兼容不同的操作系统，使用File.separator
-        String globalCodePathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME;
+        String globalCodePathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME; // 相当于./tmpCode
         // 判断全局代码目录是否存在，没有则新建
         if (!FileUtil.exist(globalCodePathName)) {
             FileUtil.mkdir(globalCodePathName);
         }
         // 把用户的代码隔离存放
-        String userCodeParentPath = globalCodePathName + File.separator + UUID.randomUUID();
-        String userCodePath = userCodeParentPath + File.separator + GLOBAL_JAVA_CLASS_NAME;
+        String userCodeParentPath = globalCodePathName + File.separator + UUID.randomUUID(); // 相当于./tmpCode/randomUUID
+        String userCodePath = userCodeParentPath + File.separator + GLOBAL_JAVA_CLASS_NAME; // 相当于./tmpCode/randomUUID/Main.java
         File userCodeFile = FileUtil.writeString(code, userCodePath, StandardCharsets.UTF_8);
         return userCodeFile;
     }
@@ -147,7 +148,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
             if (StrUtil.isNotBlank(errorMessage)) {
                 executeCodeResponse.setMessage(errorMessage);
                 // 设置状态码3，用户提交的代码执行错误
-                executeCodeResponse.setStatus(3);
+                executeCodeResponse.setStatus(ExecuteCodeRespStatusEnum.RUN_ERROR.getValue());
                 break;
             }
             // 将结果信息保存
@@ -161,7 +162,7 @@ public abstract class JavaCodeSandboxTemplate implements CodeSandbox {
         // 正常运行完成
         if (outputList.size() == messageArrayList.size()) {
             // 设置状态码1
-            executeCodeResponse.setStatus(1);
+            executeCodeResponse.setStatus(ExecuteCodeRespStatusEnum.SUCCESS.getValue());
         }
         executeCodeResponse.setOutputList(outputList);
         JudgeInfo judgeInfo = new JudgeInfo();

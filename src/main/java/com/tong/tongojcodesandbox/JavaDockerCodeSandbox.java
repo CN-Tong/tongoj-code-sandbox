@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.*;
+import com.github.dockerjava.api.exception.DockerException;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
@@ -32,7 +33,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
     /**
      * 程序执行超时时间(ms)
      */
-    private static final long TIME_OUT = 5000L;
+    private static final long TIME_OUT = 10000L;
 
     /**
      * 是否拉取java镜像
@@ -83,7 +84,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
                 .withAttachStdin(true)
                 .withAttachStdout(true)
                 .withAttachStderr(true)
-                // 创建可交互容器
+                // 创建可交互容器，实现容器的复用
                 .withTty(true)
                 .exec();
         System.out.println("创建容器成功：" + createContainerResponse);
@@ -197,6 +198,30 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate {
             executeMessage.setMemory(maxMemory[0]);
             messageArrayList.add(executeMessage);
         }
+        // 停止并删除容器
+        new Thread(() -> {
+            try {
+                Thread.sleep(TIME_OUT);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            // 停止容器
+            StopContainerCmd stopContainerCmd = dockerClient.stopContainerCmd(containerId);
+            try {
+                stopContainerCmd.exec();
+                System.out.println("停止id为" + containerId + "的容器成功！");
+            } catch (DockerException e) {
+                System.out.println("停止id为" + containerId + "的容器失败，error：" + e);
+            }
+            // 删除容器
+            RemoveContainerCmd removeContainerCmd = dockerClient.removeContainerCmd(containerId);
+            try {
+                removeContainerCmd.exec();
+                System.out.println("删除id为" + containerId + "的容器成功！");
+            } catch (DockerException e) {
+                System.out.println("删除id为" + containerId + "的容器失败，error：" + e);
+            }
+        }).start();
         return messageArrayList;
     }
 
